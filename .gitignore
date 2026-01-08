@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Runtime data (keep structure)
+data/embeddings/*
+data/prompts/*
+!data/embeddings/.gitkeep
+!data/prompts/.gitkeep
+
+# Environment
+.env
+.env.*
+.env.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo

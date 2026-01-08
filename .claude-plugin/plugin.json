@@ -1,0 +1,14 @@
+{
+  "name": "move",
+  "description": "Move smart contract development for Movement blockchain",
+  "version": "1.0.0",
+  "author": {
+    "name": "Movement Labs",
+    "url": "https://github.com/movementlabsxyz"
+  },
+  "license": "Apache-2.0",
+  "keywords": ["move", "movement", "aptos", "smart-contracts", "blockchain"],
+  "commands": ["./commands/"],
+  "skills": ["./skills/"],
+  "mcpServers": "./.mcp.json"
+}
