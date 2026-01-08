@@ -4,8 +4,13 @@ Move smart contract development tools for Movement blockchain.
 
 ## Installation
 
+Add the marketplace:
 ```bash
 /plugin marketplace add Rahat-ch/move-plugin
+```
+
+Install the plugin:
+```bash
 /plugin install move
 ```
 
