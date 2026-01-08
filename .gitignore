@@ -2,7 +2,9 @@
 node_modules/
 
 # Build output
-dist/
+# mcp-server/dist/ is gitignored but exists on main - CI builds and commits it after merge
+# See .github/workflows/build-dist.yml
+mcp-server/dist/
 
 # Runtime data (keep structure)
 data/embeddings/*
