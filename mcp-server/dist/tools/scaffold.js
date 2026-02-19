@@ -1,23 +1,18 @@
 import * as fs from "fs";
 import * as path from "path";
-const MOVE_TOML_BASE = `[package]
-name = "{{NAME}}"
-version = "1.0.0"
-authors = []
-
-[addresses]
-{{NAME}} = "_"
-
-[dependencies.AptosFramework]
-git = "https://github.com/movementlabsxyz/aptos-core.git"
-rev = "l1-migration"
-subdir = "aptos-move/framework/aptos-framework"
-
-[dev-dependencies]
-`;
+import { exec } from "child_process";
+import { promisify } from "util";
+import { resolveCli, getCliBinary, getInstallInstructions } from "./cli-detect.js";
+const execAsync = promisify(exec);
 const GITIGNORE = `build/
 .aptos/
 .movement/
+`;
+const NFT_TOML_DEPENDENCY = `
+[dependencies.AptosTokenObjects]
+git = "https://github.com/movementlabsxyz/aptos-core.git"
+rev = "m1"
+subdir = "aptos-move/framework/aptos-token-objects"
 `;
 const BASIC_MODULE = `module {{NAME}}::{{NAME}} {
     use std::signer;
@@ -281,107 +276,160 @@ module {{NAME}}::{{NAME}}_tests {
     }
 }
 `;
-const NFT_MOVE_TOML = `[package]
-name = "{{NAME}}"
-version = "1.0.0"
-authors = []
-
-[addresses]
-{{NAME}} = "_"
-
-[dependencies.AptosFramework]
-git = "https://github.com/movementlabsxyz/aptos-core.git"
-rev = "l1-migration"
-subdir = "aptos-move/framework/aptos-framework"
-
-[dependencies.AptosTokenObjects]
-git = "https://github.com/movementlabsxyz/aptos-core.git"
-rev = "l1-migration"
-subdir = "aptos-move/framework/aptos-token-objects"
-
-[dev-dependencies]
-`;
 function replaceTemplateVars(content, name) {
     const symbol = name.substring(0, 4).toUpperCase();
     return content
         .replace(/\{\{NAME\}\}/g, name)
         .replace(/\{\{SYMBOL\}\}/g, symbol);
 }
+async function runCliInit(binary, name, projectPath) {
+    try {
+        await execAsync(`${binary} move init --name ${name} --assume-yes`, {
+            cwd: projectPath,
+            timeout: 60000,
+        });
+        return { success: true };
+    }
+    catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        return { success: false, error: msg };
+    }
+}
+function appendNftDependency(projectPath) {
+    const tomlPath = path.join(projectPath, "Move.toml");
+    const content = fs.readFileSync(tomlPath, "utf-8");
+    if (!content.includes("AptosTokenObjects")) {
+        fs.appendFileSync(tomlPath, NFT_TOML_DEPENDENCY);
+    }
+}
+function fixTomlRev(projectPath) {
+    const tomlPath = path.join(projectPath, "Move.toml");
+    if (!fs.existsSync(tomlPath))
+        return;
+    let content = fs.readFileSync(tomlPath, "utf-8");
+    content = content.replace(/rev\s*=\s*"[^"]*"/g, 'rev = "m1"');
+    fs.writeFileSync(tomlPath, content);
+}
+function ensureAddress(projectPath, name) {
+    const tomlPath = path.join(projectPath, "Move.toml");
+    if (!fs.existsSync(tomlPath))
+        return;
+    let content = fs.readFileSync(tomlPath, "utf-8");
+    const addrPattern = new RegExp(`^${name}\\s*=`, "m");
+    if (!addrPattern.test(content)) {
+        content = content.replace(/\[addresses\]\s*\n/, `[addresses]\n${name} = "_"\n`);
+        fs.writeFileSync(tomlPath, content);
+    }
+}
 export async function scaffoldModule(template, name, outputPath) {
     const projectPath = path.join(outputPath || process.cwd(), name);
     if (fs.existsSync(projectPath)) {
         return `Error: Directory ${projectPath} already exists`;
     }
+    const validTemplates = ["basic", "fa", "nft"];
+    if (!validTemplates.includes(template)) {
+        return `Error: Unknown template "${template}". Use: basic, fa, or nft`;
+    }
+    const cliInfo = await resolveCli();
+    const binary = getCliBinary(cliInfo);
+    if (!binary) {
+        return `Error: No Movement or Aptos CLI found. CLI is required for project scaffolding.
+
+${getInstallInstructions()}`;
+    }
     fs.mkdirSync(projectPath, { recursive: true });
-    fs.mkdirSync(path.join(projectPath, "sources"));
-    fs.mkdirSync(path.join(projectPath, "tests"));
+    const initResult = await runCliInit(binary, name, projectPath);
+    if (!initResult.success) {
+        fs.rmSync(projectPath, { recursive: true, force: true });
+        return `Error: CLI init failed: ${initResult.error}
+
+Make sure ${cliInfo.cli} CLI is properly installed and working.
+${getInstallInstructions()}`;
+    }
+    fixTomlRev(projectPath);
+    ensureAddress(projectPath, name);
+    if (!fs.existsSync(path.join(projectPath, "tests"))) {
+        fs.mkdirSync(path.join(projectPath, "tests"), { recursive: true });
+    }
     let moduleContent;
     let testContent;
-    let moveToml;
     switch (template) {
         case "basic":
             moduleContent = BASIC_MODULE;
             testContent = BASIC_TEST;
-            moveToml = MOVE_TOML_BASE;
             break;
         case "fa":
             moduleContent = FA_MODULE;
             testContent = FA_TEST;
-            moveToml = MOVE_TOML_BASE;
             break;
         case "nft":
             moduleContent = NFT_MODULE;
             testContent = NFT_TEST;
-            moveToml = NFT_MOVE_TOML;
+            appendNftDependency(projectPath);
             break;
         default:
-            return `Error: Unknown template "${template}". Use: basic, fa, or nft`;
+            moduleContent = BASIC_MODULE;
+            testContent = BASIC_TEST;
     }
-    fs.writeFileSync(path.join(projectPath, "Move.toml"), replaceTemplateVars(moveToml, name));
     fs.writeFileSync(path.join(projectPath, "sources", `${name}.move`), replaceTemplateVars(moduleContent, name));
     fs.writeFileSync(path.join(projectPath, "tests", `${name}_tests.move`), replaceTemplateVars(testContent, name));
     fs.writeFileSync(path.join(projectPath, ".gitignore"), GITIGNORE);
+    const cliName = cliInfo.cli || "movement";
     const readme = `# ${name}
 
 A Move smart contract for Movement blockchain.
 
+## Prerequisites
+
+Install the Movement CLI:
+\`\`\`bash
+brew install movementlabsxyz/tap/movement
+\`\`\`
+
+Or if needed, Aptos CLI v7.4.0 as alternative:
+\`\`\`bash
+brew install aptos
+\`\`\`
+
 ## Build
 
 \`\`\`bash
-movement move compile --named-addresses ${name}=default
+${cliName} move compile --named-addresses ${name}=default
 \`\`\`
 
 ## Test
 
 \`\`\`bash
-movement move test --named-addresses ${name}=default
+${cliName} move test --named-addresses ${name}=default
 \`\`\`
 
 ## Deploy
 
 \`\`\`bash
 # Initialize account (first time)
-movement init --network testnet
+${cliName} init --network testnet
 
 # Fund account
 # Visit: https://faucet.movementnetwork.xyz/
 
 # Publish
-movement move publish --named-addresses ${name}=default
+${cliName} move publish --named-addresses ${name}=default
 \`\`\`
 `;
     fs.writeFileSync(path.join(projectPath, "README.md"), readme);
     return `Created ${template} project at ${projectPath}
 
 Structure:
-├── Move.toml
+├── Move.toml (generated by ${cliInfo.cli} CLI, rev = "m1")
 ├── sources/${name}.move
 ├── tests/${name}_tests.move
 ├── .gitignore
 └── README.md
 
+CLI: ${cliInfo.cli} v${cliInfo.version} ${cliInfo.versionValid ? "(compatible)" : "(version may be incompatible)"}
+
 Next steps:
 1. cd ${name}
-2. movement move compile --named-addresses ${name}=default
-3. movement move test --named-addresses ${name}=default`;
+2. ${cliName} move compile --named-addresses ${name}=default
+3. ${cliName} move test --named-addresses ${name}=default`;
 }

@@ -1,7 +1,7 @@
 ---
 name: move-expert
 description: Move language expert for Movement blockchain. Automatically triggered when working with .move files, discussing Move/Movement/Aptos concepts, debugging Move compiler errors, or building smart contracts.
-allowed-tools: Read, Grep, Glob, Bash, Write, Edit, mcp__move__scaffold_module, mcp__move__run_cli, mcp__move__search_framework, mcp__move__query_rpc
+allowed-tools: Read, Grep, Glob, Bash, Write, Edit, mcp__move__scaffold_module, mcp__move__run_cli, mcp__move__search_framework, mcp__move__query_rpc, mcp__move__setup_cli
 ---
 
 # Move Expert for Movement Blockchain
@@ -433,17 +433,17 @@ my_addr = "_"
 
 [dependencies.AptosFramework]
 git = "https://github.com/movementlabsxyz/aptos-core.git"
-rev = "l1-migration"
+rev = "m1"
 subdir = "aptos-move/framework/aptos-framework"
 
 [dependencies.AptosStdlib]
 git = "https://github.com/movementlabsxyz/aptos-core.git"
-rev = "l1-migration"
+rev = "m1"
 subdir = "aptos-move/framework/aptos-stdlib"
 
 [dependencies.AptosTokenObjects]
 git = "https://github.com/movementlabsxyz/aptos-core.git"
-rev = "l1-migration"
+rev = "m1"
 subdir = "aptos-move/framework/aptos-token-objects"
 ```
 
@@ -502,7 +502,25 @@ Fix: Check Move.toml dependencies, ensure correct import path
 
 ---
 
+## CLI Installation
+
+Install the Movement CLI via Homebrew (macOS/Linux):
+```bash
+brew install movementlabsxyz/tap/movement
+movement --version
+```
+
+Fallback: Aptos CLI v7.4.0 is supported if Movement CLI is unavailable:
+```bash
+brew install aptos
+aptos --version  # must be exactly 7.4.0
+```
+
+Use the `setup_cli` MCP tool to check installation status, get install instructions, or initialize an account.
+
 ## CLI Commands
+
+Movement CLI is recommended. Aptos CLI v7.4.0 is supported as a fallback only.
 
 ```bash
 # Compile

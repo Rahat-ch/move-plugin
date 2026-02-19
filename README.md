@@ -4,13 +4,26 @@ Move smart contract development tools for Movement blockchain.
 
 ## Installation
 
-Add the marketplace:
+### Via skills.sh (recommended)
+
 ```bash
-/plugin marketplace add Rahat-ch/move-plugin
+npx skills add Rahat-ch/move-plugin
 ```
 
-Install the plugin:
+For Claude Code only:
 ```bash
+npx skills add Rahat-ch/move-plugin -a claude-code
+```
+
+Global install (all projects):
+```bash
+npx skills add Rahat-ch/move-plugin -g -a claude-code
+```
+
+### Via Claude Code plugin marketplace
+
+```bash
+/plugin marketplace add Rahat-ch/move-plugin
 /plugin install move
 ```
 
@@ -48,9 +61,10 @@ Install the plugin:
 The plugin provides these tools to Claude:
 
 - `scaffold_module` - Generate Move projects from templates
-- `run_cli` - Execute Movement CLI commands
+- `run_cli` - Execute Movement/Aptos CLI commands
 - `search_framework` - Search Move framework code
 - `query_rpc` - Query Movement chain via RPC
+- `setup_cli` - Check, install, or initialize the CLI
 
 ## Move Expert Skill
 
@@ -62,8 +76,13 @@ The plugin includes a Move expert skill that automatically activates when:
 
 ## Requirements
 
-- [Movement CLI](https://docs.movementnetwork.xyz/devs/movementcli) installed
+- [Movement CLI](https://docs.movementnetwork.xyz/devs/movementcli) (recommended) or [Aptos CLI](https://github.com/aptos-labs/aptos-core/releases) v7.4.0 as fallback
 - Node.js 18+
+
+Install Movement CLI:
+```bash
+brew install movementlabsxyz/tap/movement
+```
 
 ## Networks
 

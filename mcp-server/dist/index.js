@@ -6,6 +6,10 @@ import { scaffoldModule } from "./tools/scaffold.js";
 import { runCli } from "./tools/cli.js";
 import { searchFramework } from "./tools/search.js";
 import { queryRpc } from "./tools/rpc.js";
+import { resolveCli, getCliBinary, getInstallInstructions, resetCliCache, } from "./tools/cli-detect.js";
+import { exec } from "child_process";
+import { promisify } from "util";
+const execAsync = promisify(exec);
 const server = new Server({
     name: "move-mcp-server",
     version: "1.0.0",
@@ -19,7 +23,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         tools: [
             {
                 name: "scaffold_module",
-                description: "Generate a new Move project from a template (basic, fa, nft)",
+                description: "Generate a new Move project from a template (basic, fa, nft). Uses CLI to initialize Move.toml with correct dependencies.",
                 inputSchema: {
                     type: "object",
                     properties: {
@@ -42,7 +46,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             {
                 name: "run_cli",
-                description: "Execute a Movement CLI command (movement move compile, test, publish, etc.)",
+                description: "Execute a Movement CLI command (move compile, test, publish, etc.). Auto-detects installed CLI, falls back to Aptos CLI v7.4.0.",
                 inputSchema: {
                     type: "object",
                     properties: {
@@ -104,6 +108,30 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                     required: ["method", "address"],
                 },
             },
+            {
+                name: "setup_cli",
+                description: "Check, install, or initialize the Movement CLI (or Aptos CLI v7.4.0 fallback). Use 'check' to verify installation, 'install' for instructions, 'init' to set up account.",
+                inputSchema: {
+                    type: "object",
+                    properties: {
+                        action: {
+                            type: "string",
+                            description: "Action: check (verify CLI), install (get instructions), init (setup account)",
+                            enum: ["check", "install", "init"],
+                        },
+                        network: {
+                            type: "string",
+                            description: "Network for init action: testnet or mainnet",
+                            enum: ["testnet", "mainnet"],
+                        },
+                        private_key: {
+                            type: "string",
+                            description: "Optional private key for init (to restore existing account)",
+                        },
+                    },
+                    required: ["action"],
+                },
+            },
         ],
     };
 });
@@ -127,6 +155,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 const result = await queryRpc(args?.method, args?.address, args?.resource_type, args?.module_name, args?.network);
                 return { content: [{ type: "text", text: result }] };
             }
+            case "setup_cli": {
+                const result = await handleSetupCli(args?.action, args?.network, args?.private_key);
+                return { content: [{ type: "text", text: result }] };
+            }
             default:
                 return { content: [{ type: "text", text: `Unknown tool: ${name}` }] };
         }
@@ -136,6 +168,62 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return { content: [{ type: "text", text: `Error: ${errorMessage}` }] };
     }
 });
+async function handleSetupCli(action, network, privateKey) {
+    switch (action) {
+        case "check": {
+            resetCliCache();
+            const info = await resolveCli(true);
+            if (!info.cli) {
+                return `CLI Status: NOT INSTALLED
+
+No Movement or Aptos CLI detected.
+
+${getInstallInstructions()}`;
+            }
+            const incompatMsg = info.cli === "aptos" ? "INCOMPATIBLE (must be exactly 7.4.0)" : "INCOMPATIBLE";
+            const status = info.versionValid ? "COMPATIBLE" : incompatMsg;
+            return `CLI Status: INSTALLED
+
+CLI: ${info.cli}
+Version: ${info.version} (${status})
+Path: ${info.path}`;
+        }
+        case "install": {
+            return getInstallInstructions();
+        }
+        case "init": {
+            const info = await resolveCli();
+            const binary = getCliBinary(info);
+            if (!binary) {
+                return `Error: No CLI found. Install first.
+
+${getInstallInstructions()}`;
+            }
+            const net = network || "testnet";
+            let cmd = `${binary} init --network ${net} --assume-yes`;
+            if (privateKey) {
+                cmd += ` --private-key ${privateKey}`;
+            }
+            try {
+                const { stdout, stderr } = await execAsync(cmd, {
+                    timeout: 180000,
+                    maxBuffer: 10 * 1024 * 1024,
+                });
+                const output = stdout + (stderr ? `\n${stderr}` : "");
+                return `Account initialized on ${net}.\n\n${output || "Success (no output)"}`;
+            }
+            catch (error) {
+                if (error && typeof error === "object" && "stderr" in error) {
+                    const execError = error;
+                    return `Error initializing account:\n${execError.stderr || execError.stdout || execError.message || "Unknown error"}`;
+                }
+                return `Error: ${error instanceof Error ? error.message : String(error)}`;
+            }
+        }
+        default:
+            return `Unknown action "${action}". Use: check, install, or init`;
+    }
+}
 async function main() {
     const transport = new StdioServerTransport();
     await server.connect(transport);

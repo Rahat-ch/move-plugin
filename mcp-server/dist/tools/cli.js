@@ -1,7 +1,7 @@
 import { exec } from "child_process";
 import { promisify } from "util";
+import { resolveCli, getCliBinary, getInstallInstructions } from "./cli-detect.js";
 const execAsync = promisify(exec);
-// movement move subcommands
 const MOVE_COMMANDS = [
     "move compile",
     "move test",
@@ -29,7 +29,6 @@ const MOVE_COMMANDS = [
     "move create-resource-account-and-publish-package",
     "move build-publish-payload",
 ];
-// movement account subcommands
 const ACCOUNT_COMMANDS = [
     "account create",
     "account create-resource-account",
@@ -40,7 +39,6 @@ const ACCOUNT_COMMANDS = [
     "account lookup-address",
     "account transfer",
 ];
-// Other safe commands
 const OTHER_COMMANDS = [
     "init",
     "info",
@@ -66,9 +64,22 @@ Allowed account commands:
 Other commands:
   ${OTHER_COMMANDS.join("\n  ")}
 
-Usage: Pass command without 'movement' prefix (e.g., "move compile" not "movement move compile")`;
+Usage: Pass command without CLI prefix (e.g., "move compile" not "movement move compile")`;
     }
-    const fullCommand = `movement ${command}`;
+    const cliInfo = await resolveCli();
+    const binary = getCliBinary(cliInfo);
+    if (!binary) {
+        return `Error: No Movement or Aptos CLI found.
+
+${getInstallInstructions()}`;
+    }
+    let warning = "";
+    if (!cliInfo.versionValid) {
+        warning = cliInfo.cli === "aptos"
+            ? `Warning: Aptos CLI version ${cliInfo.version} is not supported. Only v7.4.0 is compatible.\n\n`
+            : `Warning: ${cliInfo.cli} CLI version ${cliInfo.version} may be incompatible.\n\n`;
+    }
+    const fullCommand = `${binary} ${command}`;
     const options = cwd ? { cwd } : {};
     try {
         const { stdout, stderr } = await execAsync(fullCommand, {
@@ -77,13 +88,13 @@ Usage: Pass command without 'movement' prefix (e.g., "move compile" not "movemen
             maxBuffer: 10 * 1024 * 1024,
         });
         const output = stdout + (stderr ? `\n${stderr}` : "");
-        return output || "Command completed successfully (no output)";
+        return warning + (output || "Command completed successfully (no output)");
     }
     catch (error) {
         if (error && typeof error === "object" && "stderr" in error) {
             const execError = error;
-            return `Error:\n${execError.stderr || execError.message || "Unknown error"}`;
+            return `${warning}Error:\n${execError.stderr || execError.message || "Unknown error"}`;
         }
-        return `Error: ${error instanceof Error ? error.message : String(error)}`;
+        return `${warning}Error: ${error instanceof Error ? error.message : String(error)}`;
     }
 }
